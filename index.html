@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Panel de QR dinámicos</title>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 <style>
   :root {
     --ink: #1c1b19;
@@ -108,7 +107,7 @@
     </div>
     <div class="status" id="createStatus"></div>
     <div class="result" id="createResult">
-      <canvas id="canvas" width="220" height="220"></canvas>
+      <img id="qrImg" width="220" height="220" alt="Código QR generado" style="display:block; border:1px solid var(--line); border-radius:8px; background:#fff;">
       <div class="meta">
         <dt>URL permanente (la que lleva el QR)</dt>
         <dd id="resQrUrl">—</dd>
@@ -233,37 +232,43 @@
     $('resTarget').textContent = data.record.targetUrl;
     $('createResult').classList.add('show');
 
-    // La generación del QR es un paso aparte: si falla, no debe tapar el
-    // mensaje de éxito de la creación del registro.
-    try {
-      if (typeof QRCode === 'undefined') throw new Error('LIBRERIA_QR_NO_CARGADA');
-      const canvas = $('canvas');
-      await QRCode.toCanvas(canvas, lastQrUrl, { width: 220, margin: 1 });
-    } catch (qrErr) {
-      console.error('Error al generar la imagen del QR:', qrErr);
-      showStatus($('createStatus'), false,
-        'El código se creó, pero no se pudo dibujar la imagen del QR (revisa la consola). Puedes copiar la URL permanente igualmente.');
-    }
+    // La imagen se pide directamente a un servicio de generación de QR
+    // (no requiere ninguna librería JS ni CDN de terceros para dibujar).
+    $('qrImg').src = qrImageUrl('png', 440);
 
     $('btnCreate').disabled = false;
   });
 
-  $('btnPng').addEventListener('click', () => {
-    const link = document.createElement('a');
-    link.download = ($('createId').value.trim() || 'qr') + '.png';
-    link.href = $('canvas').toDataURL('image/png');
-    link.click();
-  });
+  function qrImageUrl(format, size) {
+    const params = new URLSearchParams({
+      size: size + 'x' + size,
+      data: lastQrUrl,
+      format: format,
+      margin: '1'
+    });
+    return 'https://api.qrserver.com/v1/create-qr-code/?' + params.toString();
+  }
 
-  $('btnSvg').addEventListener('click', async () => {
+  async function downloadQr(format, extension) {
     if (!lastQrUrl) return;
-    const svg = await QRCode.toString(lastQrUrl, { type: 'svg', margin: 1 });
-    const blob = new Blob([svg], { type: 'image/svg+xml' });
-    const link = document.createElement('a');
-    link.download = ($('createId').value.trim() || 'qr') + '.svg';
-    link.href = URL.createObjectURL(blob);
-    link.click();
-  });
+    const url = qrImageUrl(format, 600);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('HTTP_' + res.status);
+      const blob = await res.blob();
+      const link = document.createElement('a');
+      link.download = ($('createId').value.trim() || 'qr') + '.' + extension;
+      link.href = URL.createObjectURL(blob);
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (e) {
+      console.error('Error al descargar el QR:', e);
+      alert('No se pudo descargar la imagen. Revisa tu conexión e inténtalo de nuevo.');
+    }
+  }
+
+  $('btnPng').addEventListener('click', () => downloadQr('png', 'png'));
+  $('btnSvg').addEventListener('click', () => downloadQr('svg', 'svg'));
 
   $('btnCopy').addEventListener('click', () => {
     navigator.clipboard.writeText(lastQrUrl);
