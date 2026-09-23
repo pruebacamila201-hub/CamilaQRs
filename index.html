@@ -84,9 +84,7 @@
   </header>
 
   <div class="gate">
-    <label for="apiUrl">URL del backend (Apps Script /exec)</label>
-    <input type="text" id="apiUrl" placeholder="https://script.google.com/macros/s/XXXX/exec">
-    <label for="adminKey" style="margin-top:10px; display:block;">Clave de administrador</label>
+    <label for="adminKey">Clave de administrador</label>
     <input type="text" id="adminKey" placeholder="ADMIN_KEY configurada en Script Properties">
   </div>
 
@@ -183,7 +181,13 @@ REG003, https://ejemplo.com/producto-3"
 <script>
   const $ = (id) => document.getElementById(id);
 
-  function apiBase() { return $('apiUrl').value.trim().replace(/\/$/, ''); }
+  // ------------------------------------------------------------------
+  // CONFIGURACIÓN: pega aquí la URL /exec de tu implementación de Apps Script
+  // (la misma que usas en qr.html)
+  // ------------------------------------------------------------------
+  const API_URL = "https://script.google.com/macros/s/AKfycbwu-USteFVEs7rhxY4nHTMJIt-HxeWsBrqR0l-GEJwIhuqo5QqIakYKj0lkVHWNivY/exec";
+
+  function apiBase() { return API_URL.trim().replace(/\/$/, ''); }
   function adminKey() { return $('adminKey').value.trim(); }
 
   function showStatus(el, ok, text) {
@@ -224,8 +228,12 @@ REG003, https://ejemplo.com/producto-3"
   }
 
   function requireConfig() {
-    if (!apiBase() || !adminKey()) {
-      alert('Completa la URL del backend y la clave de administrador arriba.');
+    if (API_URL.indexOf('PEGA_AQUI') !== -1) {
+      alert('Falta configurar la URL del backend dentro del código de index.html (constante API_URL).');
+      return false;
+    }
+    if (!adminKey()) {
+      alert('Completa la clave de administrador arriba.');
       return false;
     }
     return true;
