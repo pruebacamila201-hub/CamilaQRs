@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Redirigiendo…</title>
+<style>
+  :root {
+    --ink: #1c1b19;
+    --paper: #f6f4ef;
+    --line: #d8d3c8;
+    --accent: #2f5d50;
+    --danger: #8c3a2b;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  }
+  body {
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    max-width: 420px; width: 100%;
+    text-align: center;
+  }
+  .mark {
+    width: 44px; height: 44px; margin: 0 auto 24px;
+    border: 2px solid var(--ink);
+    border-radius: 50%;
+    position: relative;
+  }
+  .mark.spin { border-top-color: transparent; animation: spin 0.9s linear infinite; }
+  .mark.stop { border-color: var(--danger); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  h1 { font-size: 1.15rem; font-weight: 600; margin: 0 0 8px; letter-spacing: -0.01em; }
+  p { font-size: 0.95rem; color: #55524a; line-height: 1.5; margin: 0; }
+  a.retry {
+    display: inline-block; margin-top: 20px;
+    color: var(--accent); text-decoration: none;
+    border-bottom: 1px solid var(--accent);
+    font-size: 0.9rem;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="mark spin" id="mark"></div>
+    <h1 id="title">Abriendo tu enlace</h1>
+    <p id="message">Un momento, estamos verificando este código.</p>
+    <a class="retry" id="retry" href="#" style="display:none">Reintentar</a>
+  </div>
+
+<script>
+  // ------------------------------------------------------------------
+  // CONFIGURACIÓN: pega aquí la URL /exec de tu implementación de Apps Script
+  // ------------------------------------------------------------------
+  const API_URL = "PEGA_AQUI_TU_URL_DE_APPS_SCRIPT/exec";
+
+  const titleEl = document.getElementById('title');
+  const msgEl = document.getElementById('message');
+  const markEl = document.getElementById('mark');
+  const retryEl = document.getElementById('retry');
+
+  function showError(title, message) {
+    markEl.classList.remove('spin');
+    markEl.classList.add('stop');
+    titleEl.textContent = title;
+    msgEl.textContent = message;
+    retryEl.style.display = 'inline-block';
+    retryEl.onclick = function (e) { e.preventDefault(); location.reload(); };
+  }
+
+  function resolveAndRedirect() {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('id');
+
+    if (!id) {
+      showError('Código no válido', 'No se encontró un identificador en este enlace.');
+      return;
+    }
+    if (API_URL.indexOf('PEGA_AQUI') !== -1) {
+      showError('Sistema no configurado', 'Falta configurar la URL del backend en qr.html.');
+      return;
+    }
+
+    fetch(API_URL + '?action=resolve&id=' + encodeURIComponent(id))
+      .then(function (res) {
+        if (!res.ok) throw new Error('HTTP_' + res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        if (!data.ok) {
+          showError('No se pudo verificar', 'Ocurrió un problema al consultar este código. Intenta de nuevo en unos segundos.');
+          return;
+        }
+        if (!data.found) {
+          showError('Código QR no encontrado', 'Este código no existe en el sistema.');
+          return;
+        }
+        if (!data.active) {
+          showError('No disponible', 'Este código QR no está disponible actualmente.');
+          return;
+        }
+        // Redirección final
+        window.location.replace(data.targetUrl);
+      })
+      .catch(function () {
+        showError('Error de conexión', 'No pudimos comunicarnos con el sistema. Revisa tu conexión e inténtalo de nuevo.');
+      });
+  }
+
+  resolveAndRedirect();
+</script>
+</body>
+</html>

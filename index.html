@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel de QR dinámicos</title>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<style>
+  :root {
+    --ink: #1c1b19;
+    --paper: #f6f4ef;
+    --panel: #ffffff;
+    --line: #d8d3c8;
+    --accent: #2f5d50;
+    --accent-ink: #ffffff;
+    --danger: #8c3a2b;
+    --muted: #736f65;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+    padding: 32px 16px 80px;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  header { margin-bottom: 32px; }
+  header h1 { font-size: 1.5rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--muted); font-size: 0.92rem; }
+
+  .gate {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 20px; margin-bottom: 24px;
+  }
+  .gate label { font-size: 0.85rem; color: var(--muted); }
+  .gate input { width: 100%; margin-top: 6px; }
+
+  section {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 24px; margin-bottom: 20px;
+  }
+  section h2 { font-size: 1.02rem; margin: 0 0 16px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .row.single { grid-template-columns: 1fr; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
+
+  label.field { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 5px; }
+  input[type=text] {
+    width: 100%; padding: 10px 11px; border: 1px solid var(--line); border-radius: 7px;
+    font-size: 0.93rem; background: var(--paper); color: var(--ink);
+  }
+  input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  button {
+    border: none; border-radius: 7px; padding: 10px 16px; font-size: 0.88rem;
+    cursor: pointer; font-weight: 600;
+  }
+  button.primary { background: var(--accent); color: var(--accent-ink); }
+  button.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+
+  .status { font-size: 0.86rem; margin-top: 12px; padding: 10px 12px; border-radius: 7px; display: none; }
+  .status.ok { display: block; background: #e7efe9; color: var(--accent); }
+  .status.err { display: block; background: #f3e4e0; color: var(--danger); }
+
+  .result {
+    margin-top: 18px; padding-top: 18px; border-top: 1px dashed var(--line);
+    display: none;
+  }
+  .result.show { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+  .result canvas { border: 1px solid var(--line); border-radius: 8px; }
+  .result .meta { flex: 1; min-width: 220px; }
+  .result .meta dt { font-size: 0.78rem; color: var(--muted); margin-top: 10px; }
+  .result .meta dd { margin: 2px 0 0; font-size: 0.9rem; word-break: break-all; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+  .pill.active { background: #e7efe9; color: var(--accent); }
+  .pill.inactive { background: #f3e4e0; color: var(--danger); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Panel de QR dinámicos</h1>
+    <p>Crea, consulta y actualiza destinos sin regenerar el código físico.</p>
+  </header>
+
+  <div class="gate">
+    <label for="apiUrl">URL del backend (Apps Script /exec)</label>
+    <input type="text" id="apiUrl" placeholder="https://script.google.com/macros/s/XXXX/exec">
+    <label for="adminKey" style="margin-top:10px; display:block;">Clave de administrador</label>
+    <input type="text" id="adminKey" placeholder="ADMIN_KEY configurada en Script Properties">
+  </div>
+
+  <section>
+    <h2>Crear código</h2>
+    <div class="row">
+      <div>
+        <label class="field" for="createId">ID único</label>
+        <input type="text" id="createId" placeholder="REG001">
+      </div>
+      <div>
+        <label class="field" for="createUrl">URL destino</label>
+        <input type="text" id="createUrl" placeholder="https://ejemplo.com/producto">
+      </div>
+    </div>
+    <div class="actions">
+      <button class="primary" id="btnCreate">Generar QR</button>
+    </div>
+    <div class="status" id="createStatus"></div>
+    <div class="result" id="createResult">
+      <canvas id="canvas" width="220" height="220"></canvas>
+      <div class="meta">
+        <dt>URL permanente (la que lleva el QR)</dt>
+        <dd id="resQrUrl">—</dd>
+        <dt>Destino actual</dt>
+        <dd id="resTarget">—</dd>
+        <div class="actions" style="margin-top:14px;">
+          <button class="ghost" id="btnPng">Descargar PNG</button>
+          <button class="ghost" id="btnSvg">Descargar SVG</button>
+          <button class="ghost" id="btnCopy">Copiar URL</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Consultar / actualizar</h2>
+    <div class="row single">
+      <div>
+        <label class="field" for="queryId">ID</label>
+        <input type="text" id="queryId" placeholder="REG001">
+      </div>
+    </div>
+    <div class="actions">
+      <button class="ghost" id="btnQuery">Consultar</button>
+    </div>
+    <div class="status" id="queryStatus"></div>
+
+    <div id="queryDetails" style="display:none; margin-top:16px;">
+      <p style="font-size:0.88rem; margin:0 0 10px;">
+        Estado: <span class="pill" id="queryPill"></span>
+      </p>
+      <label class="field" for="updateUrl">Nueva URL destino</label>
+      <input type="text" id="updateUrl">
+      <div class="actions" style="margin-top:12px;">
+        <button class="primary" id="btnUpdate">Actualizar destino</button>
+        <button class="ghost" id="btnToggle">Activar / desactivar</button>
+      </div>
+      <div class="status" id="updateStatus"></div>
+    </div>
+  </section>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  function apiBase() { return $('apiUrl').value.trim().replace(/\/$/, ''); }
+  function adminKey() { return $('adminKey').value.trim(); }
+
+  function showStatus(el, ok, text) {
+    el.className = 'status ' + (ok ? 'ok' : 'err');
+    el.textContent = text;
+    el.style.display = 'block';
+  }
+
+  async function apiGet(action, extraParams) {
+    const params = new URLSearchParams(Object.assign({ action }, extraParams || {}));
+    const res = await fetch(apiBase() + '?' + params.toString());
+    return res.json();
+  }
+
+  // Content-Type: text/plain evita el preflight CORS que Apps Script no soporta.
+  async function apiPost(payload) {
+    const res = await fetch(apiBase(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+    return res.json();
+  }
+
+  function errorText(code) {
+    const map = {
+      ID_VACIO: 'El ID no puede estar vacío.',
+      ID_DUPLICADO: 'Ya existe un código con ese ID.',
+      ID_CON_CARACTERES_NO_PERMITIDOS: 'Usa solo letras, números, guiones y guiones bajos.',
+      URL_INVALIDA: 'La URL destino no es válida (debe empezar con http:// o https://).',
+      NO_ENCONTRADO: 'No existe ningún código con ese ID.',
+      NO_AUTORIZADO: 'Clave de administrador incorrecta.',
+      ADMIN_KEY_NO_CONFIGURADA: 'El backend no tiene ADMIN_KEY configurada.',
+      ACCION_NO_VALIDA: 'Acción no reconocida.',
+      ERROR_INTERNO: 'Ocurrió un error interno. Intenta de nuevo.'
+    };
+    return map[code] || 'Ocurrió un problema al procesar la solicitud.';
+  }
+
+  function requireConfig() {
+    if (!apiBase() || !adminKey()) {
+      alert('Completa la URL del backend y la clave de administrador arriba.');
+      return false;
+    }
+    return true;
+  }
+
+  let lastQrUrl = '';
+
+  $('btnCreate').addEventListener('click', async () => {
+    if (!requireConfig()) return;
+    const id = $('createId').value.trim();
+    const targetUrl = $('createUrl').value.trim();
+    const basePage = location.href.replace(/index\.html.*$/, '');
+
+    $('btnCreate').disabled = true;
+    try {
+      const data = await apiPost({ action: 'create', key: adminKey(), id, targetUrl, basePage });
+      if (!data.ok) { showStatus($('createStatus'), false, errorText(data.error)); return; }
+
+      showStatus($('createStatus'), true, 'Código creado correctamente.');
+      lastQrUrl = data.record.qrUrl;
+      $('resQrUrl').textContent = lastQrUrl;
+      $('resTarget').textContent = data.record.targetUrl;
+      $('createResult').classList.add('show');
+
+      const canvas = $('canvas');
+      await QRCode.toCanvas(canvas, lastQrUrl, { width: 220, margin: 1 });
+    } catch (e) {
+      showStatus($('createStatus'), false, 'Error de conexión con el backend.');
+    } finally {
+      $('btnCreate').disabled = false;
+    }
+  });
+
+  $('btnPng').addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.download = ($('createId').value.trim() || 'qr') + '.png';
+    link.href = $('canvas').toDataURL('image/png');
+    link.click();
+  });
+
+  $('btnSvg').addEventListener('click', async () => {
+    if (!lastQrUrl) return;
+    const svg = await QRCode.toString(lastQrUrl, { type: 'svg', margin: 1 });
+    const blob = new Blob([svg], { type: 'image/svg+xml' });
+    const link = document.createElement('a');
+    link.download = ($('createId').value.trim() || 'qr') + '.svg';
+    link.href = URL.createObjectURL(blob);
+    link.click();
+  });
+
+  $('btnCopy').addEventListener('click', () => {
+    navigator.clipboard.writeText(lastQrUrl);
+    showStatus($('createStatus'), true, 'URL copiada al portapapeles.');
+  });
+
+  let currentRecord = null;
+
+  $('btnQuery').addEventListener('click', async () => {
+    if (!requireConfig()) return;
+    const id = $('queryId').value.trim();
+    if (!id) return;
+
+    try {
+      const data = await apiGet('get', { id, key: adminKey() });
+      if (!data.ok) {
+        showStatus($('queryStatus'), false, errorText(data.error));
+        $('queryDetails').style.display = 'none';
+        return;
+      }
+      currentRecord = data.record;
+      showStatus($('queryStatus'), true, 'Código encontrado.');
+      $('queryDetails').style.display = 'block';
+      $('updateUrl').value = currentRecord.targetUrl;
+      const pill = $('queryPill');
+      const active = currentRecord.estado === 'ACTIVO';
+      pill.textContent = currentRecord.estado;
+      pill.className = 'pill ' + (active ? 'active' : 'inactive');
+    } catch (e) {
+      showStatus($('queryStatus'), false, 'Error de conexión con el backend.');
+    }
+  });
+
+  $('btnUpdate').addEventListener('click', async () => {
+    if (!currentRecord) return;
+    const newUrl = $('updateUrl').value.trim();
+    try {
+      const data = await apiPost({ action: 'update', key: adminKey(), id: currentRecord.id, targetUrl: newUrl });
+      showStatus($('updateStatus'), data.ok, data.ok ? 'Destino actualizado. El QR físico no cambia.' : errorText(data.error));
+    } catch (e) {
+      showStatus($('updateStatus'), false, 'Error de conexión con el backend.');
+    }
+  });
+
+  $('btnToggle').addEventListener('click', async () => {
+    if (!currentRecord) return;
+    const activating = currentRecord.estado !== 'ACTIVO';
+    try {
+      const data = await apiPost({ action: activating ? 'activate' : 'deactivate', key: adminKey(), id: currentRecord.id });
+      if (data.ok) {
+        currentRecord.estado = data.estado;
+        const pill = $('queryPill');
+        pill.textContent = data.estado;
+        pill.className = 'pill ' + (data.estado === 'ACTIVO' ? 'active' : 'inactive');
+        showStatus($('updateStatus'), true, 'Estado actualizado.');
+      } else {
+        showStatus($('updateStatus'), false, errorText(data.error));
+      }
+    } catch (e) {
+      showStatus($('updateStatus'), false, 'Error de conexión con el backend.');
+    }
+  });
+</script>
+</body>
+</html>
