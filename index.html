@@ -126,6 +126,33 @@
   </section>
 
   <section>
+    <h2>Crear varios códigos a la vez</h2>
+    <p style="font-size:0.85rem; color:var(--muted); margin:0 0 12px;">
+      Un registro por línea, con el ID y la URL destino separados por una coma.
+    </p>
+    <textarea id="bulkInput" rows="6" placeholder="REG001, https://ejemplo.com/producto-1
+REG002, https://ejemplo.com/producto-2
+REG003, https://ejemplo.com/producto-3"
+      style="width:100%; padding:10px 11px; border:1px solid var(--line); border-radius:7px; font-size:0.88rem; background:var(--paper); color:var(--ink); font-family: ui-monospace, monospace; resize: vertical;"></textarea>
+    <div class="actions" style="margin-top:10px;">
+      <button class="primary" id="btnBulkCreate">Crear todos</button>
+    </div>
+    <div class="status" id="bulkStatus"></div>
+    <div id="bulkResults" style="margin-top:16px; display:none;">
+      <table style="width:100%; border-collapse:collapse; font-size:0.87rem;">
+        <thead>
+          <tr style="text-align:left; border-bottom:1px solid var(--line);">
+            <th style="padding:6px 4px;">ID</th>
+            <th style="padding:6px 4px;">Resultado</th>
+            <th style="padding:6px 4px;">QR</th>
+          </tr>
+        </thead>
+        <tbody id="bulkTableBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
     <h2>Consultar / actualizar</h2>
     <div class="row single">
       <div>
@@ -237,31 +264,30 @@
 
     // La imagen se pide directamente a un servicio de generación de QR
     // (no requiere ninguna librería JS ni CDN de terceros para dibujar).
-    $('qrImg').src = qrImageUrl('png', 440);
+    $('qrImg').src = qrImageUrl(lastQrUrl, 'png', 440);
     $('qrIdLabel').textContent = id;
 
     $('btnCreate').disabled = false;
   });
 
-  function qrImageUrl(format, size) {
+  function qrImageUrl(targetQrUrl, format, size) {
     const params = new URLSearchParams({
       size: size + 'x' + size,
-      data: lastQrUrl,
+      data: targetQrUrl,
       format: format,
       margin: '1'
     });
     return 'https://api.qrserver.com/v1/create-qr-code/?' + params.toString();
   }
 
-  async function downloadQr(format, extension) {
-    if (!lastQrUrl) return;
-    const id = $('createId').value.trim() || 'qr';
+  async function downloadQr(id, qrUrl, format, extension) {
+    if (!qrUrl) return;
     const size = 600;
     const labelHeight = 60;
 
     try {
       if (format === 'png') {
-        const res = await fetch(qrImageUrl('png', size));
+        const res = await fetch(qrImageUrl(qrUrl, 'png', size));
         if (!res.ok) throw new Error('HTTP_' + res.status);
         const blob = await res.blob();
         const bitmap = await createImageBitmap(blob);
@@ -290,7 +316,7 @@
       }
 
       // SVG: se pide el vector y se le inserta un texto con el ID debajo.
-      const res = await fetch(qrImageUrl('svg', size));
+      const res = await fetch(qrImageUrl(qrUrl, 'svg', size));
       if (!res.ok) throw new Error('HTTP_' + res.status);
       let svgText = await res.text();
 
@@ -328,12 +354,79 @@
     }[c]));
   }
 
-  $('btnPng').addEventListener('click', () => downloadQr('png', 'png'));
-  $('btnSvg').addEventListener('click', () => downloadQr('svg', 'svg'));
+  $('btnPng').addEventListener('click', () => downloadQr($('createId').value.trim() || 'qr', lastQrUrl, 'png', 'png'));
+  $('btnSvg').addEventListener('click', () => downloadQr($('createId').value.trim() || 'qr', lastQrUrl, 'svg', 'svg'));
 
   $('btnCopy').addEventListener('click', () => {
     navigator.clipboard.writeText(lastQrUrl);
     showStatus($('createStatus'), true, 'URL copiada al portapapeles.');
+  });
+
+  $('btnBulkCreate').addEventListener('click', async () => {
+    if (!requireConfig()) return;
+    const lines = $('bulkInput').value.split('\n').map(l => l.trim()).filter(l => l);
+    if (!lines.length) return;
+
+    const basePage = location.href.replace(/index\.html.*$/, '');
+    const tbody = $('bulkTableBody');
+    tbody.innerHTML = '';
+    $('bulkResults').style.display = 'block';
+    $('btnBulkCreate').disabled = true;
+    showStatus($('bulkStatus'), true, 'Creando 0 de ' + lines.length + '...');
+
+    let ok = 0, fail = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const parts = lines[i].split(',');
+      const id = (parts[0] || '').trim();
+      const targetUrl = (parts.slice(1).join(',') || '').trim();
+
+      const row = document.createElement('tr');
+      row.style.borderBottom = '1px solid var(--line)';
+      const tdId = document.createElement('td');
+      tdId.style.padding = '6px 4px';
+      tdId.textContent = id || '(vacío)';
+      const tdResult = document.createElement('td');
+      tdResult.style.padding = '6px 4px';
+      const tdQr = document.createElement('td');
+      tdQr.style.padding = '6px 4px';
+      row.appendChild(tdId); row.appendChild(tdResult); row.appendChild(tdQr);
+      tbody.appendChild(row);
+
+      if (!id || !targetUrl) {
+        tdResult.textContent = 'Línea inválida (falta ID o URL)';
+        tdResult.style.color = 'var(--danger)';
+        fail++;
+      } else {
+        try {
+          const data = await apiPost({ action: 'create', key: adminKey(), id, targetUrl, basePage });
+          if (data.ok) {
+            tdResult.textContent = 'Creado';
+            tdResult.style.color = 'var(--accent)';
+            const dlBtn = document.createElement('button');
+            dlBtn.className = 'ghost';
+            dlBtn.textContent = 'Descargar PNG';
+            dlBtn.style.fontSize = '0.8rem';
+            dlBtn.style.padding = '5px 10px';
+            dlBtn.addEventListener('click', () => downloadQr(id, data.record.qrUrl, 'png', 'png'));
+            tdQr.appendChild(dlBtn);
+            ok++;
+          } else {
+            tdResult.textContent = errorText(data.error);
+            tdResult.style.color = 'var(--danger)';
+            fail++;
+          }
+        } catch (e) {
+          tdResult.textContent = 'Error de conexión';
+          tdResult.style.color = 'var(--danger)';
+          fail++;
+        }
+      }
+      showStatus($('bulkStatus'), true, 'Creando ' + (i + 1) + ' de ' + lines.length + '... (' + ok + ' listos, ' + fail + ' con error)');
+    }
+
+    showStatus($('bulkStatus'), fail === 0, 'Listo: ' + ok + ' creados, ' + fail + ' con error.');
+    $('btnBulkCreate').disabled = false;
   });
 
   let currentRecord = null;
