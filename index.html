@@ -107,7 +107,10 @@
     </div>
     <div class="status" id="createStatus"></div>
     <div class="result" id="createResult">
-      <img id="qrImg" width="220" height="220" alt="Código QR generado" style="display:block; border:1px solid var(--line); border-radius:8px; background:#fff;">
+      <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
+        <img id="qrImg" width="220" height="220" alt="Código QR generado" style="display:block; border:1px solid var(--line); border-radius:8px; background:#fff;">
+        <span id="qrIdLabel" style="font-size:0.85rem; font-weight:600; color: var(--ink); text-align:center;"></span>
+      </div>
       <div class="meta">
         <dt>URL permanente (la que lleva el QR)</dt>
         <dd id="resQrUrl">—</dd>
@@ -235,6 +238,7 @@
     // La imagen se pide directamente a un servicio de generación de QR
     // (no requiere ninguna librería JS ni CDN de terceros para dibujar).
     $('qrImg').src = qrImageUrl('png', 440);
+    $('qrIdLabel').textContent = id;
 
     $('btnCreate').disabled = false;
   });
@@ -251,13 +255,64 @@
 
   async function downloadQr(format, extension) {
     if (!lastQrUrl) return;
-    const url = qrImageUrl(format, 600);
+    const id = $('createId').value.trim() || 'qr';
+    const size = 600;
+    const labelHeight = 60;
+
     try {
-      const res = await fetch(url);
+      if (format === 'png') {
+        const res = await fetch(qrImageUrl('png', size));
+        if (!res.ok) throw new Error('HTTP_' + res.status);
+        const blob = await res.blob();
+        const bitmap = await createImageBitmap(blob);
+
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size + labelHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(bitmap, 0, 0, size, size);
+        ctx.fillStyle = '#1c1b19';
+        ctx.font = 'bold 28px Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(id, size / 2, size + labelHeight / 2);
+
+        canvas.toBlob((outBlob) => {
+          const link = document.createElement('a');
+          link.download = id + '.png';
+          link.href = URL.createObjectURL(outBlob);
+          link.click();
+          URL.revokeObjectURL(link.href);
+        }, 'image/png');
+        return;
+      }
+
+      // SVG: se pide el vector y se le inserta un texto con el ID debajo.
+      const res = await fetch(qrImageUrl('svg', size));
       if (!res.ok) throw new Error('HTTP_' + res.status);
-      const blob = await res.blob();
+      let svgText = await res.text();
+
+      const viewBoxMatch = svgText.match(/viewBox="0 0 (\d+) (\d+)"/);
+      const vbW = viewBoxMatch ? parseInt(viewBoxMatch[1], 10) : size;
+      const vbH = viewBoxMatch ? parseInt(viewBoxMatch[2], 10) : size;
+      const newH = vbH + labelHeight;
+
+      svgText = svgText
+        .replace(/viewBox="0 0 \d+ \d+"/, 'viewBox="0 0 ' + vbW + ' ' + newH + '"')
+        .replace(/(<svg[^>]*\sheight=")(\d+)(")/, '$1' + newH + '$3')
+        .replace(
+          '</svg>',
+          '<rect x="0" y="' + vbH + '" width="' + vbW + '" height="' + labelHeight + '" fill="#ffffff"/>' +
+          '<text x="' + (vbW / 2) + '" y="' + (vbH + labelHeight / 2) + '" ' +
+          'font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#1c1b19" ' +
+          'text-anchor="middle" dominant-baseline="middle">' + escapeXml_(id) + '</text></svg>'
+        );
+
+      const blob = new Blob([svgText], { type: 'image/svg+xml' });
       const link = document.createElement('a');
-      link.download = ($('createId').value.trim() || 'qr') + '.' + extension;
+      link.download = id + '.svg';
       link.href = URL.createObjectURL(blob);
       link.click();
       URL.revokeObjectURL(link.href);
@@ -265,6 +320,12 @@
       console.error('Error al descargar el QR:', e);
       alert('No se pudo descargar la imagen. Revisa tu conexión e inténtalo de nuevo.');
     }
+  }
+
+  function escapeXml_(str) {
+    return str.replace(/[<>&'"]/g, (c) => ({
+      '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;'
+    }[c]));
   }
 
   $('btnPng').addEventListener('click', () => downloadQr('png', 'png'));
