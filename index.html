@@ -211,23 +211,41 @@
     const basePage = location.href.replace(/index\.html.*$/, '');
 
     $('btnCreate').disabled = true;
+    let data;
     try {
-      const data = await apiPost({ action: 'create', key: adminKey(), id, targetUrl, basePage });
-      if (!data.ok) { showStatus($('createStatus'), false, errorText(data.error)); return; }
+      data = await apiPost({ action: 'create', key: adminKey(), id, targetUrl, basePage });
+    } catch (e) {
+      console.error('Error de red al crear:', e);
+      showStatus($('createStatus'), false, 'Error de conexión con el backend.');
+      $('btnCreate').disabled = false;
+      return;
+    }
 
-      showStatus($('createStatus'), true, 'Código creado correctamente.');
-      lastQrUrl = data.record.qrUrl;
-      $('resQrUrl').textContent = lastQrUrl;
-      $('resTarget').textContent = data.record.targetUrl;
-      $('createResult').classList.add('show');
+    if (!data.ok) {
+      showStatus($('createStatus'), false, errorText(data.error));
+      $('btnCreate').disabled = false;
+      return;
+    }
 
+    showStatus($('createStatus'), true, 'Código creado correctamente.');
+    lastQrUrl = data.record.qrUrl;
+    $('resQrUrl').textContent = lastQrUrl;
+    $('resTarget').textContent = data.record.targetUrl;
+    $('createResult').classList.add('show');
+
+    // La generación del QR es un paso aparte: si falla, no debe tapar el
+    // mensaje de éxito de la creación del registro.
+    try {
+      if (typeof QRCode === 'undefined') throw new Error('LIBRERIA_QR_NO_CARGADA');
       const canvas = $('canvas');
       await QRCode.toCanvas(canvas, lastQrUrl, { width: 220, margin: 1 });
-    } catch (e) {
-      showStatus($('createStatus'), false, 'Error de conexión con el backend.');
-    } finally {
-      $('btnCreate').disabled = false;
+    } catch (qrErr) {
+      console.error('Error al generar la imagen del QR:', qrErr);
+      showStatus($('createStatus'), false,
+        'El código se creó, pero no se pudo dibujar la imagen del QR (revisa la consola). Puedes copiar la URL permanente igualmente.');
     }
+
+    $('btnCreate').disabled = false;
   });
 
   $('btnPng').addEventListener('click', () => {
